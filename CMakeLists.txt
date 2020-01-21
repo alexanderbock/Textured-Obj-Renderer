@@ -1,6 +1,6 @@
 ##########################################################################################
 #                                                                                        #
-# WebSocket Handler                                                                      #
+# Texture Obj Renderer                                                                   #
 #                                                                                        #
 # Copyright (c) Alexander Bock, 2020                                                     #
 #                                                                                        #
@@ -38,8 +38,10 @@ set_property(TARGET sgct PROPERTY FOLDER "Dependencies")
 add_executable(${PROJECT_NAME}
   src/main.cpp
   src/objloader.cpp
+  src/inireader.cpp
 
   src/objloader.h
+  src/inireader.h
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE sgct)
 

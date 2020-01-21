@@ -28,10 +28,12 @@
  * DAMAGE.                                                                               *
  ****************************************************************************************/
 
+#include "inireader.h"
 #include "objloader.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <sgct/sgct.h>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -284,15 +286,15 @@ void keyboardCallback(Key key, Modifier modifier, Action action, int) {
 
     switch (key) {
         case Key::Left:
-            _lookAtPhi += 0.1f;
-            break;
-        case Key::Right:
             _lookAtPhi -= 0.1f;
             break;
-        case Key::Up:
+        case Key::Right:
+            _lookAtPhi += 0.1f;
+            break;
+        case Key::E:
             _eyePosition.y += 1.f;
             break;
-        case Key::Down:
+        case Key::Q:
             _eyePosition.y -= 1.f;
             break;
     }
@@ -307,6 +309,19 @@ void decode() {
 }
 
 int main(int argc, char** argv) {
+    std::filesystem::path iniPath = "config.ini";
+    while (!std::filesystem::exists(iniPath) && iniPath != iniPath.root_path() ) {
+        iniPath = std::filesystem::absolute(".." / iniPath);
+    }
+    if (iniPath == iniPath.root_path()) {
+        throw std::runtime_error("Could not find 'config.ini'");
+    }
+
+    Log::Info("Loading ini file %s", iniPath.c_str());
+    Ini ini = readIni(iniPath.string());
+
+
+
     std::vector<std::string> arg(argv + 1, argv + argc);
     Configuration config = parseArguments(arg);
     config::Cluster cluster = loadCluster(config.configFilename);
