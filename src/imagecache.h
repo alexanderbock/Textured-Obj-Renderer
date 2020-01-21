@@ -28,29 +28,32 @@
  * DAMAGE.                                                                               *
  ****************************************************************************************/
 
-#ifndef __OBJECT_H__
-#define __OBJECT_H__
+#ifndef __IMAGECACHE_H__
+#define __IMAGECACHE_H__
 
-#include "imagecache.h"
 #include <sgct/ogl_headers.h>
+#include <array>
 #include <filesystem>
-#include <string>
+#include <vector>
 
-struct Object {
-    Object(std::string name, const std::string& objFile,
-        std::filesystem::path imageFolder);
-    
-    void upload();
+class ImageCache {
+public:
+    ImageCache(std::vector<std::filesystem::path> paths);
 
-    GLuint vao = 0;
-    GLuint vbo = 0;
-    uint32_t nVertices = 0;
+    void setCurrentImage(uint32_t currentImage);
 
-    const std::string name;
-    const std::filesystem::path objFile;
-    const std::vector<std::filesystem::path> imagePaths;
+    GLuint texture() const;
+    std::string loadedImage() const;
 
-    ImageCache imageCache;
+private:
+    uint32_t _currentImage = 0;
+    //std::array<GLuint, 64> _imageCache;
+
+    GLuint _texture = 0;
+
+    const std::vector<std::filesystem::path> _paths;
+
 };
 
-#endif // __OBJECT_H__
+
+#endif // __IMAGECACHE_H__

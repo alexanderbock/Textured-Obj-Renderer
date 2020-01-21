@@ -37,10 +37,12 @@ set_property(TARGET sgct PROPERTY FOLDER "Dependencies")
 
 add_executable(${PROJECT_NAME}
   src/main.cpp
+  src/imagecache.cpp
   src/inireader.cpp
   src/objloader.cpp
   src/object.cpp
 
+  src/imagecache.h
   src/inireader.h
   src/objloader.h
   src/object.h

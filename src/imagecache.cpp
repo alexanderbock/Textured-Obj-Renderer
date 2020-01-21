@@ -28,29 +28,45 @@
  * DAMAGE.                                                                               *
  ****************************************************************************************/
 
-#ifndef __OBJECT_H__
-#define __OBJECT_H__
-
 #include "imagecache.h"
-#include <sgct/ogl_headers.h>
-#include <filesystem>
-#include <string>
 
-struct Object {
-    Object(std::string name, const std::string& objFile,
-        std::filesystem::path imageFolder);
-    
-    void upload();
+#include <sgct/log.h>
+#include <sgct/texturemanager.h>
 
-    GLuint vao = 0;
-    GLuint vbo = 0;
-    uint32_t nVertices = 0;
+ImageCache::ImageCache(std::vector<std::filesystem::path> paths)
+    : _paths(std::move(paths))
+{
+    //std::fill(_imageCache.begin(), _imageCache.end(), 0);
+}
 
-    const std::string name;
-    const std::filesystem::path objFile;
-    const std::vector<std::filesystem::path> imagePaths;
+void ImageCache::setCurrentImage(uint32_t currentImage) {
+    const bool cacheDirty = currentImage != _currentImage;
+    if (currentImage == _currentImage) {
+        return;
+    }
+    if (currentImage >= _paths.size()) {
+        return;
+    }
 
-    ImageCache imageCache;
-};
+    _currentImage = currentImage;
 
-#endif // __OBJECT_H__
+    if (_texture > 0) {
+        sgct::TextureManager::instance().removeTexture(_texture);
+    }
+    std::string path = _paths[_currentImage].string();
+    sgct::Log::Debug("Loading image %s", path.c_str());
+    _texture = sgct::TextureManager::instance().loadTexture(path, true);
+}
+
+GLuint ImageCache::texture() const {
+    return _texture;
+}
+
+std::string ImageCache::loadedImage() const {
+    if (_currentImage < _paths.size()) {
+        return _paths[_currentImage].string();
+    }
+    else {
+        return "";
+    }
+}

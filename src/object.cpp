@@ -146,6 +146,15 @@ namespace {
     }
 } // namespace
 
+
+Object::Object(std::string name_, const std::string& objFile_,
+               std::filesystem::path imageFolder_)
+    : name(std::move(name_))
+    , objFile(objFile_)
+    , imagePaths(loadImagePaths(imageFolder_))
+    , imageCache(imagePaths)
+{}
+
 void Object::upload() {
     sgct::Log::Info("Loading obj file %s", objFile.string().c_str());
     std::tuple<GLuint, GLuint, uint32_t> r = loadObj(objFile.string());
@@ -153,8 +162,3 @@ void Object::upload() {
     vbo = std::get<1>(r);
     nVertices = std::get<2>(r);
 }
-
-Object::Object(const std::string& objFile, std::filesystem::path imageFolder)
-    : objFile(objFile)
-    , imagePaths(loadImagePaths(imageFolder))
-{}

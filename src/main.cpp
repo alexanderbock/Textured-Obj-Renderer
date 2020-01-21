@@ -75,6 +75,7 @@ in vec2 tr_uv;
 
 out vec4 color;
 
+uniform sampler2D tex;
 uniform vec3 lightPosition;
 
 const vec3 AmbientColor = vec3(0.1, 0.1, 0.1);
@@ -82,20 +83,22 @@ const vec3 DiffuseColor = vec3(0.4, 0.4, 0.4);
 const vec3 SpecularColor = vec3(1.0, 1.0, 1.0);
 
 void main() {
-  vec3 lightDir = normalize(lightPosition - tr_position);
-  
-  float l = max(dot(lightDir, tr_normal), 0.0);
-  float spec = 0.0;
+  //vec3 lightDir = normalize(lightPosition - tr_position);
+  //
+  //float l = max(dot(lightDir, tr_normal), 0.0);
+  //float spec = 0.0;
 
-  if (l > 0.0) {
-    vec3 viewDir = normalize(-tr_position);
+  //if (l > 0.0) {
+  //  vec3 viewDir = normalize(-tr_position);
 
-    vec3 halfDir = normalize(lightDir + viewDir);
-    float specAngle = max(dot(halfDir, tr_normal), 0.0);
-    spec = pow(specAngle, 16.0);
-  }
+  //  vec3 halfDir = normalize(lightDir + viewDir);
+  //  float specAngle = max(dot(halfDir, tr_normal), 0.0);
+  //  spec = pow(specAngle, 16.0);
+  //}
 
-  color = vec4(vec3(tr_uv, 0.0) + l * DiffuseColor + spec * SpecularColor, 1.0);
+  vec4 c = texture(tex, tr_uv);
+  color = c;
+  //color = vec4(c.rgb + l * DiffuseColor + spec * SpecularColor, 1.0);
 }
 )";
 
@@ -103,6 +106,10 @@ void main() {
 
     bool _leftButtonDown = false;
     bool _rightButtonDown = false;
+    bool _playingImages = false;
+
+    uint32_t _currentImage = 0;
+    bool _showHelp = false;
 
     glm::vec3 _eyePosition = glm::vec3(0.f, 0.f, 0.f);
     double _lookAtPhi = 0.0;
@@ -121,19 +128,34 @@ void main() {
         float lightPosX;
         float lightPosY;
         float lightPosZ;
+
+        uint32_t currentImage;
+        bool showHelp;
     };
     SharedObject<SyncData> _syncData;
 
 } // namespace
 
 void initGL(GLFWwindow*) {
-    std::for_each(_objects.begin(), _objects.end(), std::mem_fn(&Object::upload));
+    for (Object& obj : _objects) {
+        obj.upload();
+        obj.imageCache.setCurrentImage(0);
+    }
     Log::Info("Finished loading");
 
     ShaderManager::instance().addShaderProgram("wall", vertexShader, fragmentShader);
 }
 
+void preSync() {
+    if (_playingImages) {
+        _currentImage += 1;
+    }
+}
+
 void postSyncPreDraw() {
+    for (Object& obj : _objects) {
+        obj.imageCache.setCurrentImage(_currentImage);
+    }
 }
 
 void draw(RenderData data) {
@@ -166,12 +188,68 @@ void draw(RenderData data) {
         glm::value_ptr(_lightPosition)
     );
 
+    glUniform1i(glGetUniformLocation(prog.id(), "tex"), 0);
+
     for (const Object& obj : _objects) {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, obj.imageCache.texture());
+
         glBindVertexArray(obj.vao);
         glDrawArrays(GL_TRIANGLES, 0, obj.nVertices);
     }
 
     prog.unbind();
+}
+
+void draw2D(RenderData data) {
+    if (!_showHelp) {
+        return;
+    }
+
+    const float w =
+        static_cast<float>(data.window.resolution().x)* data.viewport.size().x;
+
+    text::Font* f1 = text::FontManager::instance().font("SGCTFont", 14);
+
+    if (Engine::instance().isMaster()) {
+        text::print(
+            data.window,
+            data.viewport,
+            *f1,
+            text::Alignment::TopLeft,
+            (5.f * w) / 7.f,
+            250.f,
+            glm::vec4(0.8f, 0.8f, 0.f, 1.f),
+            "Help\nWSAD: Move camera\nSpace: Play/stop images\nUp/Down: Advance images\n"
+            "1: Back to first image"
+        );
+    }
+
+    float h = 25.f;
+    for (const Object& obj : _objects) {
+        text::print(
+            data.window,
+            data.viewport,
+            *f1,
+            text::Alignment::TopLeft,
+            25.f,
+            h,
+            glm::vec4(0.8f, 0.8f, 0.8f, 1.f),
+            "%s: %s", obj.name.c_str(), obj.imageCache.loadedImage().c_str()
+        );
+        h += 25.f;
+    }
+
+    text::print(
+        data.window,
+        data.viewport,
+        *f1,
+        text::Alignment::TopLeft,
+        25.f,
+        h,
+        glm::vec4(0.8f, 0.8f, 0.8f, 1.f),
+        "Current image: %i", _currentImage
+    );
 }
 
 void cleanUp() {
@@ -199,6 +277,22 @@ void keyboardCallback(Key key, Modifier modifier, Action action, int) {
             break;
         case Key::D:
             _eyePosition -= glm::vec3(0.f, 0.f, 0.1f);
+            break;
+        case Key::Space:
+            _playingImages = !_playingImages;
+            break;
+        case Key::Up:
+            _currentImage += 1;
+            break;
+        case Key::Down:
+            _currentImage -= 1;
+            break;
+        case Key::F1:
+            _showHelp = !_showHelp;
+            break;
+        case Key::Key1:
+            _currentImage = 0;
+            _playingImages = false;
             break;
     }
 }
@@ -265,6 +359,9 @@ void encode() {
     data.lightPosY = _lightPosition.y;
     data.lightPosZ = _lightPosition.z;
 
+    data.currentImage = _currentImage;
+    data.showHelp = _showHelp;
+
     _syncData.setValue(data);
     sgct::SharedData::instance().writeObj(_syncData);
 }
@@ -277,6 +374,8 @@ void decode() {
     _lookAtPhi = data.lookAtPhi;
     _lookAtTheta = data.lookAtTheta;
     _lightPosition = glm::vec3(data.lightPosX, data.lightPosY, data.lightPosZ);
+    _currentImage = data.currentImage;
+    _showHelp = data.showHelp;
 }
 
 int main(int argc, char** argv) {
@@ -302,7 +401,7 @@ int main(int argc, char** argv) {
         const std::string& modelPath = p.second;
         const std::string& imagePath = imagePaths[p.first];
 
-        _objects.emplace_back(modelPath, imagePath);
+        _objects.emplace_back(p.first, modelPath, imagePath);
     }
 
     std::vector<std::string> arg(argv + 1, argv + argc);
@@ -311,8 +410,10 @@ int main(int argc, char** argv) {
 
     Engine::Callbacks callbacks;
     callbacks.initOpenGL = initGL;
+    callbacks.preSync = preSync;
     callbacks.postSyncPreDraw = postSyncPreDraw;
     callbacks.draw = draw;
+    callbacks.draw2D = draw2D;
     callbacks.cleanUp = cleanUp;
     callbacks.keyboard = keyboardCallback;
     callbacks.mousePos = mousePos;
