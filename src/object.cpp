@@ -88,7 +88,7 @@ namespace {
 
         GLuint vao;
         GLuint vbo;
-        uint32_t nVertices = vertices.size();
+        uint32_t nVertices = static_cast<uint32_t>(vertices.size());
 
         glGenVertexArrays(1, &vao);
         glBindVertexArray(vao);

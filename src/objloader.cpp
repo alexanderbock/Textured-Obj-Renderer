@@ -235,39 +235,6 @@ namespace {
                 }
             }
 
-
-
-            //const size_t first = v.find('/');
-            //const size_t second = v.find('/', first + 1);
-
-            //std::string_view vert = v.substr(0, first);
-            //std::string_view uv = v.substr(first + 1, second - first - 1);
-            //std::string_view norm = v.substr(second + 1);
-
-            //std::from_chars_result vertRes = std::from_chars(
-            //    vert.data(), vert.data() + vert.size(),
-            //    res.vertex
-            //);
-            //res.vertex -= 1;  // 1-based indexing in Waveform OBJ, 0-based in here
-
-            //std::from_chars_result uvRes = std::from_chars(
-            //    uv.data(), uv.data() + uv.size(),
-            //    res.uv
-            //);
-            //res.uv -= 1;  // 1-based indexing in Waveform OBJ, 0-based in here
-
-            //std::from_chars_result normRes = std::from_chars(
-            //    norm.data(), norm.data() + norm.size(),
-            //    res.normal
-            //);
-            //res.normal -= 1;  // 1-based indexing in Waveform OBJ, 0-based in here
-
-            //if (vertRes.ec != std::errc() || uvRes.ec != std::errc() ||
-            //    normRes.ec != std::errc())
-            //{
-            //    throw std::runtime_error("Error loading line: " + std::string(v));
-            //}
-
             return res;
         };
 

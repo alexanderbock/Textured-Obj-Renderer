@@ -35,6 +35,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <sgct/sgct.h>
 #include <glfw/glfw3.h>
+#include <charconv>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -235,7 +236,10 @@ void draw2D(RenderData data) {
             25.f,
             h,
             glm::vec4(0.8f, 0.8f, 0.8f, 1.f),
-            "%s: %s", obj.name.c_str(), obj.imageCache.loadedImage().c_str()
+            "%s: %s (%i)",
+            obj.name.c_str(),
+            obj.imageCache.loadedImage().c_str(),
+            obj.imageCache.texture()
         );
         h += 25.f;
     }
@@ -260,7 +264,7 @@ void cleanUp() {
     _objects.clear();
 }
 
-void keyboardCallback(Key key, Modifier modifier, Action action, int) {
+void keyboardCallback(Key key, Modifier, Action action, int) {
     if (action == Action::Release) {
         return;
     }
@@ -285,7 +289,7 @@ void keyboardCallback(Key key, Modifier modifier, Action action, int) {
             _currentImage += 1;
             break;
         case Key::Down:
-            _currentImage -= 1;
+            _currentImage = std::max(_currentImage - 1, 0u);
             break;
         case Key::F1:
             _showHelp = !_showHelp;
@@ -315,7 +319,7 @@ void mousePos(double x, double y) {
     }
 
     if (_rightButtonDown) {
-        _eyePosition.y += dy;
+        _eyePosition.y += static_cast<float>(dy);
     }
 
     if (_leftButtonDown || _rightButtonDown) {
@@ -323,7 +327,7 @@ void mousePos(double x, double y) {
     }
 }
 
-void mouseButton(MouseButton button, Modifier modifier, Action action) {
+void mouseButton(MouseButton button, Modifier, Action action) {
     if (button == MouseButton::Button1) {
         _leftButtonDown = action == Action::Press;
     }
@@ -363,11 +367,11 @@ void encode() {
     data.showHelp = _showHelp;
 
     _syncData.setValue(data);
-    sgct::SharedData::instance().writeObj(_syncData);
+    SharedData::instance().writeObj(_syncData);
 }
 
 void decode() {
-    sgct::SharedData::instance().readObj(_syncData);
+    SharedData::instance().readObj(_syncData);
     const SyncData& data = _syncData.value();
 
     _eyePosition = glm::vec3(data.eyePosX, data.eyePosY, data.eyePosZ);
@@ -403,6 +407,12 @@ int main(int argc, char** argv) {
 
         _objects.emplace_back(p.first, modelPath, imagePath);
     }
+
+    std::map<std::string, std::string> camera = ini["Camera"];
+    std::string height = camera["Height"];
+    std::from_chars(height.data(), height.data() + height.size(), _eyePosition.y);
+    _eyePosition.y = -_eyePosition.y;
+
 
     std::vector<std::string> arg(argv + 1, argv + argc);
     Configuration config = parseArguments(arg);
