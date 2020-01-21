@@ -37,11 +37,13 @@ set_property(TARGET sgct PROPERTY FOLDER "Dependencies")
 
 add_executable(${PROJECT_NAME}
   src/main.cpp
-  src/objloader.cpp
   src/inireader.cpp
+  src/objloader.cpp
+  src/object.cpp
 
-  src/objloader.h
   src/inireader.h
+  src/objloader.h
+  src/object.h
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE sgct)
 

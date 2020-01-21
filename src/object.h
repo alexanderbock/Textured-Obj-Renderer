@@ -28,84 +28,25 @@
  * DAMAGE.                                                                               *
  ****************************************************************************************/
 
-#include "inireader.h"
+#ifndef __OBJECT_H__
+#define __OBJECT_H__
 
-#include <fstream>
-#include <utility>
+#include <sgct/ogl_headers.h>
+#include <filesystem>
+#include <string>
 
-namespace {
-    std::string_view parseGroupName(std::string_view v) {
-        const size_t opening = v.find('[');
-        const size_t ending = v.find(']');
-        return v.substr(opening + 1, ending - opening - 1);
-    }
 
-    std::string_view trim(std::string_view v) {
-        // Remove spaces from the beginning of the string
-        while (v[0] == ' ') {
-            v = v.substr(1);
-        }
+struct Object {
+    Object(const std::string& objFile, std::filesystem::path imageFolder);
+    
+    void upload();
 
-        // Remove spaces from the end of the string
-        while (v[v.size() - 1] == ' ') {
-            v = v.substr(0, v.size() - 1);
-        }
+    GLuint vao = 0;
+    GLuint vbo = 0;
+    uint32_t nVertices = 0;
 
-        return v;
-    }
+    const std::filesystem::path objFile;
+    const std::vector<std::filesystem::path> imagePaths;
+};
 
-    std::pair<std::string_view, std::string_view> parseValue(std::string_view v) {
-        const size_t equal = v.find('=');
-
-        std::string_view begin = v.substr(0, equal);
-        begin = trim(begin);
-
-        std::string_view end = v.substr(equal + 1);
-        end = trim(end);
-        
-        return std::pair(begin, end);
-    }
-
-} // namespace
-
-Ini readIni(const std::string& filename) {
-    std::ifstream f(filename);
-    if (!f.good()) {
-        throw std::runtime_error("Could not find file " + filename);
-    }
-
-    Ini res;
-
-    std::string currentGroup;
-    for (std::string line; std::getline(f, line);) {
-        if (line.empty()) {
-            // Skip empty lines
-            continue;
-        }
-        if (line[0] == '#') {
-            // Treat # as a comment line
-            continue;
-        }
-
-        if (line[0] == '[') {
-            // We are in a group
-            currentGroup = parseGroupName(line);
-
-            // Ensure that the group exists in the map
-            if (res.find(currentGroup) == res.end()) {
-                res[currentGroup] = {};
-            }
-        }
-        else {
-            // We are finding a value
-            if (currentGroup.empty()) {
-                throw std::runtime_error("Found a value outside a group");
-            }
-
-            std::pair<std::string_view, std::string_view> value = parseValue(line);
-            res[currentGroup][std::string(value.first)] = value.second;
-        }
-    }
-
-    return res;
-}
+#endif // __OBJECT_H__

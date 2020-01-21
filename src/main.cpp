@@ -29,10 +29,12 @@
  ****************************************************************************************/
 
 #include "inireader.h"
-#include "objloader.h"
+#include "object.h"
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <sgct/sgct.h>
+#include <glfw/glfw3.h>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -40,92 +42,7 @@
 using namespace sgct;
 
 namespace {
-    struct Buffers {
-        GLuint vao;
-        GLuint vbo;
-
-        uint32_t nVertices;
-    };
-
-    Buffers loadObj(std::string filename) {
-        obj::Model obj = obj::loadObjFile(filename);
-
-        struct Vertex {
-            float x = 0.f;
-            float y = 0.f;
-            float z = 0.f;
-
-            float nx = 0.f;
-            float ny = 0.f;
-            float nz = 1.f;
-
-            float u = 0.f;
-            float v = 0.f;
-        };
-
-        std::vector<Vertex> vertices;
-
-        for (const obj::Face& face : obj.faces) {
-            auto makeVertex = [&obj](obj::Face::Indices indices) -> Vertex {
-                Vertex res;
-                
-                res.x = obj.positions[indices.vertex].x;
-                res.y = obj.positions[indices.vertex].y;
-                res.z = obj.positions[indices.vertex].z;
-
-                if (indices.normal.has_value()) {
-                    res.nx = obj.normals[*indices.normal].nx;
-                    res.ny = obj.normals[*indices.normal].ny;
-                    res.nz = obj.normals[*indices.normal].nz;
-                }
-
-                if (indices.uv.has_value()) {
-                    res.u = obj.uvs[*indices.uv].u;
-                    res.v = obj.uvs[*indices.uv].v;
-                }
-
-                return res;
-            };
-
-
-            vertices.push_back(makeVertex(face.i0));
-            vertices.push_back(makeVertex(face.i1));
-            vertices.push_back(makeVertex(face.i2));
-
-            if (face.i3.has_value()) {
-                vertices.push_back(makeVertex(face.i0));
-                vertices.push_back(makeVertex(face.i2));
-                vertices.push_back(makeVertex(*face.i3));
-            }
-        }
-
-        Buffers res;
-        res.nVertices = vertices.size();
-
-        glGenVertexArrays(1, &res.vao);
-        glBindVertexArray(res.vao);
-
-        glGenBuffers(1, &res.vbo);
-        glBindBuffer(GL_ARRAY_BUFFER, res.vbo);
-        glBufferData(
-            GL_ARRAY_BUFFER,
-            sizeof(Vertex) * vertices.size(),
-            vertices.data(),
-            GL_STATIC_DRAW
-        );
-
-
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), nullptr);
-
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(3 * sizeof(float)));
-
-        glEnableVertexAttribArray(2);
-        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(6 * sizeof(float)));
-
-        return res;
-    }
+    constexpr const float Sensitivity = 750.f;
 
     constexpr const char* vertexShader = R"(
 #version 330 core
@@ -167,70 +84,71 @@ const vec3 SpecularColor = vec3(1.0, 1.0, 1.0);
 void main() {
   vec3 lightDir = normalize(lightPosition - tr_position);
   
-  float lambertian = max(dot(lightDir, tr_normal), 0.0);
-  float specular = 0.0;
+  float l = max(dot(lightDir, tr_normal), 0.0);
+  float spec = 0.0;
 
-  if (lambertian > 0.0) {
+  if (l > 0.0) {
     vec3 viewDir = normalize(-tr_position);
 
     vec3 halfDir = normalize(lightDir + viewDir);
     float specAngle = max(dot(halfDir, tr_normal), 0.0);
-    specular = pow(specAngle, 16.0);
+    spec = pow(specAngle, 16.0);
   }
 
-  color = vec4(vec3(tr_uv, 0.0) + lambertian * DiffuseColor + specular * SpecularColor, 1.0);
+  color = vec4(vec3(tr_uv, 0.0) + l * DiffuseColor + spec * SpecularColor, 1.0);
 }
 )";
 
+    std::vector<Object> _objects;
 
-    Buffers _wallA;
-    Buffers _wallB;
-    Buffers _wallC;
-    Buffers _wallD;
-    Buffers _wallR;
+    bool _leftButtonDown = false;
+    bool _rightButtonDown = false;
 
     glm::vec3 _eyePosition = glm::vec3(0.f, 0.f, 0.f);
-    float _lookAtPhi = 0.f;
-    glm::vec3 _upDirection = glm::vec3(0.f, 1.f, 0.f);
-
+    double _lookAtPhi = 0.0;
+    double _lookAtTheta = 0.0;
     glm::vec3 _lightPosition = glm::vec3(0.f, 0.f, 0.f);
+
+
+    struct SyncData {
+        float eyePosX;
+        float eyePosY;
+        float eyePosZ;
+
+        double lookAtPhi;
+        double lookAtTheta;
+
+        float lightPosX;
+        float lightPosY;
+        float lightPosZ;
+    };
+    SharedObject<SyncData> _syncData;
 
 } // namespace
 
 void initGL(GLFWwindow*) {
-    auto load = [](std::string filename) {
-        Log::Info("Loading %s", filename.c_str());
-
-        Buffers buffer = loadObj(filename);
-        return buffer;
-    };
-
-    _wallA = load("../obj/wall_a_v20170909a.obj");
-    _wallB = load("../obj/wall_b_v20170712a.obj");
-    _wallC = load("../obj/wall_c_v20170712a.obj");
-    _wallD = load("../obj/wall_d_v20170712a.obj");
-    _wallR = load("../obj/wall_round_v20170909.obj");
-
+    std::for_each(_objects.begin(), _objects.end(), std::mem_fn(&Object::upload));
     Log::Info("Finished loading");
-
 
     ShaderManager::instance().addShaderProgram("wall", vertexShader, fragmentShader);
 }
 
 void postSyncPreDraw() {
-
 }
 
 void draw(RenderData data) {
-    glm::vec3 lookAtPosition = glm::vec3(
-        std::cos(_lookAtPhi),
-        _eyePosition.y,
-        std::sin(_lookAtPhi)
+    glm::mat4 translation = glm::translate(glm::mat4(1.f), _eyePosition);
+
+    glm::quat phiRotation = glm::angleAxis(
+        static_cast<float>(_lookAtPhi),
+        glm::vec3(0.f, 1.f, 0.f)
     );
-
-    glm::mat4 view = glm::lookAt(_eyePosition, lookAtPosition, _upDirection);
-    glm::mat4 mvp = data.modelViewProjectionMatrix * view;
-
+    glm::quat thetaRotation = glm::angleAxis(
+        static_cast<float>(_lookAtTheta),
+        glm::vec3(1.f, 0.f, 0.f)
+    );
+    glm::quat view = thetaRotation * phiRotation;
+    glm::mat4 mvp = data.modelViewProjectionMatrix * glm::mat4_cast(view) * translation;
 
     const ShaderProgram& prog = ShaderManager::instance().shaderProgram("wall");
     prog.bind();
@@ -248,35 +166,20 @@ void draw(RenderData data) {
         glm::value_ptr(_lightPosition)
     );
 
-    glBindVertexArray(_wallA.vao);
-    glDrawArrays(GL_TRIANGLES, 0, _wallA.nVertices);
-
-    glBindVertexArray(_wallB.vao);
-    glDrawArrays(GL_TRIANGLES, 0, _wallB.nVertices);
-
-    glBindVertexArray(_wallC.vao);
-    glDrawArrays(GL_TRIANGLES, 0, _wallC.nVertices);
-
-    glBindVertexArray(_wallD.vao);
-    glDrawArrays(GL_TRIANGLES, 0, _wallD.nVertices);
-
-    glBindVertexArray(_wallR.vao);
-    glDrawArrays(GL_TRIANGLES, 0, _wallR.nVertices);
+    for (const Object& obj : _objects) {
+        glBindVertexArray(obj.vao);
+        glDrawArrays(GL_TRIANGLES, 0, obj.nVertices);
+    }
 
     prog.unbind();
 }
 
 void cleanUp() {
-    glDeleteVertexArrays(1, &_wallA.vao);
-    glDeleteBuffers(1, &_wallA.vbo);
-    glDeleteVertexArrays(1, &_wallB.vao);
-    glDeleteBuffers(1, &_wallB.vbo);
-    glDeleteVertexArrays(1, &_wallC.vao);
-    glDeleteBuffers(1, &_wallC.vbo);
-    glDeleteVertexArrays(1, &_wallD.vao);
-    glDeleteBuffers(1, &_wallD.vbo);
-    glDeleteVertexArrays(1, &_wallR.vao);
-    glDeleteBuffers(1, &_wallR.vbo);
+    for (const Object& obj : _objects) {
+        glDeleteVertexArrays(1, &obj.vao);
+        glDeleteBuffers(1, &obj.vbo);
+    }
+    _objects.clear();
 }
 
 void keyboardCallback(Key key, Modifier modifier, Action action, int) {
@@ -285,27 +188,95 @@ void keyboardCallback(Key key, Modifier modifier, Action action, int) {
     }
 
     switch (key) {
-        case Key::Left:
-            _lookAtPhi -= 0.1f;
+        case Key::W:
+            _eyePosition += glm::vec3(0.1f, 0.f, 0.f);
             break;
-        case Key::Right:
-            _lookAtPhi += 0.1f;
+        case Key::S:
+            _eyePosition -= glm::vec3(0.1f, 0.f, 0.f);
             break;
-        case Key::E:
-            _eyePosition.y += 1.f;
+        case Key::A:
+            _eyePosition += glm::vec3(0.f, 0.f, 0.1f);
             break;
-        case Key::Q:
-            _eyePosition.y -= 1.f;
+        case Key::D:
+            _eyePosition -= glm::vec3(0.f, 0.f, 0.1f);
             break;
     }
 }
 
-void encode() {
+void mousePos(double x, double y) {
+    int width, height;
+    GLFWwindow* w = glfwGetCurrentContext();
+    glfwGetWindowSize(w, &width, &height);
 
+    const double dx = (x - width / 2) / Sensitivity;
+    const double dy = (y - height / 2) / Sensitivity;
+
+    if (_leftButtonDown) {
+        _lookAtPhi += dx;
+        _lookAtTheta = std::clamp(
+            _lookAtTheta + dy,
+            -glm::half_pi<double>(),
+            glm::half_pi<double>()
+        );
+    }
+
+    if (_rightButtonDown) {
+        _eyePosition.y += dy;
+    }
+
+    if (_leftButtonDown || _rightButtonDown) {
+        glfwSetCursorPos(w, width / 2, height / 2);
+    }
+}
+
+void mouseButton(MouseButton button, Modifier modifier, Action action) {
+    if (button == MouseButton::Button1) {
+        _leftButtonDown = action == Action::Press;
+    }
+
+    if (button == MouseButton::Button2) {
+        _rightButtonDown = action == Action::Press;
+    }
+
+    GLFWwindow* w = glfwGetCurrentContext();
+    glfwSetInputMode(
+        w,
+        GLFW_CURSOR,
+        (_leftButtonDown || _rightButtonDown) ? GLFW_CURSOR_HIDDEN : GLFW_CURSOR_NORMAL
+    );
+    int width, height;
+    glfwGetWindowSize(w, &width, &height);
+
+    if (_leftButtonDown || _rightButtonDown) {
+        glfwSetCursorPos(w, width / 2, height / 2);
+    }
+}
+
+void encode() {
+    SyncData data;
+    data.eyePosX = _eyePosition.x;
+    data.eyePosY = _eyePosition.y;
+    data.eyePosZ = _eyePosition.z;
+
+    data.lookAtPhi = _lookAtPhi;
+    data.lookAtTheta = _lookAtTheta;
+
+    data.lightPosX = _lightPosition.x;
+    data.lightPosY = _lightPosition.y;
+    data.lightPosZ = _lightPosition.z;
+
+    _syncData.setValue(data);
+    sgct::SharedData::instance().writeObj(_syncData);
 }
 
 void decode() {
+    sgct::SharedData::instance().readObj(_syncData);
+    const SyncData& data = _syncData.value();
 
+    _eyePosition = glm::vec3(data.eyePosX, data.eyePosY, data.eyePosZ);
+    _lookAtPhi = data.lookAtPhi;
+    _lookAtTheta = data.lookAtTheta;
+    _lightPosition = glm::vec3(data.lightPosX, data.lightPosY, data.lightPosZ);
 }
 
 int main(int argc, char** argv) {
@@ -316,11 +287,23 @@ int main(int argc, char** argv) {
     if (iniPath == iniPath.root_path()) {
         throw std::runtime_error("Could not find 'config.ini'");
     }
+    
+    if (!iniPath.parent_path().empty()) {
+        std::filesystem::current_path(iniPath.parent_path());
+    }
 
-    Log::Info("Loading ini file %s", iniPath.c_str());
+    Log::Info("Loading ini file %s", iniPath.string().c_str());
     Ini ini = readIni(iniPath.string());
 
+    std::map<std::string, std::string> models = ini["Models"];
+    std::map<std::string, std::string> imagePaths = ini["Image"];
 
+    for (const std::pair<const std::string, std::string>& p : models) {
+        const std::string& modelPath = p.second;
+        const std::string& imagePath = imagePaths[p.first];
+
+        _objects.emplace_back(modelPath, imagePath);
+    }
 
     std::vector<std::string> arg(argv + 1, argv + argc);
     Configuration config = parseArguments(arg);
@@ -332,6 +315,8 @@ int main(int argc, char** argv) {
     callbacks.draw = draw;
     callbacks.cleanUp = cleanUp;
     callbacks.keyboard = keyboardCallback;
+    callbacks.mousePos = mousePos;
+    callbacks.mouseButton = mouseButton;
     callbacks.encode = encode;
     callbacks.decode = decode;
 
