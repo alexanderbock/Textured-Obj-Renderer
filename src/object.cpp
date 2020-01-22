@@ -136,7 +136,10 @@ namespace {
         return { vao, vbo, nVertices };
     }
 
-    std::vector<std::filesystem::path> loadImagePaths(std::filesystem::path imageFolder) {
+    std::vector<std::filesystem::path> loadImagePaths(std::string imageFolder) {
+        if (imageFolder.empty()) {
+            return std::vector<std::filesystem::path>();
+        }
         namespace fs = std::filesystem;
         std::vector<fs::path> res;
         for (const fs::directory_entry& entry : fs::directory_iterator(imageFolder)) {
@@ -147,18 +150,75 @@ namespace {
 } // namespace
 
 
-Object::Object(std::string name_, const std::string& objFile_,
-               std::filesystem::path imageFolder_)
+Object::Object(std::string name_, std::string objFile_, std::string spoutName_,
+               std::string imageFolder_)
     : name(std::move(name_))
-    , objFile(objFile_)
+    , objFile(std::move(objFile_))
+    , spoutName(std::move(spoutName_))
     , imagePaths(loadImagePaths(imageFolder_))
     , imageCache(imagePaths)
 {}
 
-void Object::upload() {
-    sgct::Log::Info("Loading obj file %s", objFile.string().c_str());
-    std::tuple<GLuint, GLuint, uint32_t> r = loadObj(objFile.string());
+void Object::initialize() {
+    sgct::Log::Info("Loading obj file %s", objFile.c_str());
+    std::tuple<GLuint, GLuint, uint32_t> r = loadObj(objFile);
     vao = std::get<0>(r);
     vbo = std::get<1>(r);
     nVertices = std::get<2>(r);
+
+    spout.senderName.resize(spoutName.size() + 1);
+    std::fill(spout.senderName.begin(), spout.senderName.end(), '\0');
+    std::copy(spoutName.begin(), spoutName.end(), spout.senderName.begin());
+
+    spout.receiver = GetSpout();
+}
+
+void Object::deinitialize() {
+    glDeleteVertexArrays(1, &vao);
+    glDeleteBuffers(1, &vbo);
+
+#ifdef SGCT_HAS_SPOUT
+    if (spout.receiver) {
+        spout.receiver->ReleaseReceiver();
+        spout.receiver->Release();
+    }
+#endif // SGCT_HAS_SPOUT
+}
+
+void Object::bindTexture(bool useSpout) {
+    if (useSpout) {
+#ifdef SGCT_HAS_SPOUT
+        spout.isInitialized = spout.receiver->CreateReceiver(
+            spout.senderName.data(),
+            spout.width,
+            spout.height
+        );
+        if (spout.isInitialized) {
+            const bool success = spout.receiver->ReceiveTexture(
+                spout.senderName.data(),
+                spout.width,
+                spout.height
+            );
+            if (success) {
+                spout.receiver->BindSharedTexture();
+            }
+        }
+#endif // SGCT_HAS_SPOUT
+    }
+    else {
+        glBindTexture(GL_TEXTURE_2D, imageCache.texture());
+    }
+}
+
+void Object::unbindTexture(bool useSpout) {
+    if (useSpout) {
+#ifdef SGCT_HAS_SPOUT
+        if (spout.isInitialized) {
+            spout.receiver->UnBindSharedTexture();
+        }
+#endif // SGCT_HAS_SPOUT
+    }
+    else {
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
 }

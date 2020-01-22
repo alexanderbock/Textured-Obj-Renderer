@@ -77,29 +77,14 @@ in vec2 tr_uv;
 out vec4 color;
 
 uniform sampler2D tex;
-uniform vec3 lightPosition;
-
-const vec3 AmbientColor = vec3(0.1, 0.1, 0.1);
-const vec3 DiffuseColor = vec3(0.4, 0.4, 0.4);
-const vec3 SpecularColor = vec3(1.0, 1.0, 1.0);
+uniform int flipTex;
 
 void main() {
-  //vec3 lightDir = normalize(lightPosition - tr_position);
-  //
-  //float l = max(dot(lightDir, tr_normal), 0.0);
-  //float spec = 0.0;
-
-  //if (l > 0.0) {
-  //  vec3 viewDir = normalize(-tr_position);
-
-  //  vec3 halfDir = normalize(lightDir + viewDir);
-  //  float specAngle = max(dot(halfDir, tr_normal), 0.0);
-  //  spec = pow(specAngle, 16.0);
-  //}
-
-  vec4 c = texture(tex, tr_uv);
-  color = c;
-  //color = vec4(c.rgb + l * DiffuseColor + spec * SpecularColor, 1.0);
+  vec2 texCoords = tr_uv;
+  if (flipTex != 0) {
+    texCoords.y = 1.0 - texCoords.y;
+  }
+  color = texture(tex, texCoords);
 }
 )";
 
@@ -109,14 +94,13 @@ void main() {
     bool _rightButtonDown = false;
     bool _playingImages = false;
 
+    bool _useSpoutTextures = false;
     uint32_t _currentImage = 0;
     bool _showHelp = false;
 
     glm::vec3 _eyePosition = glm::vec3(0.f, 0.f, 0.f);
     double _lookAtPhi = 0.0;
     double _lookAtTheta = 0.0;
-    glm::vec3 _lightPosition = glm::vec3(0.f, 0.f, 0.f);
-
 
     struct SyncData {
         float eyePosX;
@@ -126,20 +110,16 @@ void main() {
         double lookAtPhi;
         double lookAtTheta;
 
-        float lightPosX;
-        float lightPosY;
-        float lightPosZ;
-
         uint32_t currentImage;
         bool showHelp;
+        bool useSpoutTextures;
     };
-    SharedObject<SyncData> _syncData;
 
 } // namespace
 
 void initGL(GLFWwindow*) {
     for (Object& obj : _objects) {
-        obj.upload();
+        obj.initialize();
         obj.imageCache.setCurrentImage(0);
     }
     Log::Info("Finished loading");
@@ -159,7 +139,9 @@ void postSyncPreDraw() {
     }
 }
 
-void draw(RenderData data) {
+void draw(const RenderData& data) {
+    glEnable(GL_CULL_FACE);
+
     glm::mat4 translation = glm::translate(glm::mat4(1.f), _eyePosition);
 
     glm::quat phiRotation = glm::angleAxis(
@@ -183,33 +165,31 @@ void draw(RenderData data) {
         glm::value_ptr(mvp)
     );
 
-    glUniform3fv(
-        glGetUniformLocation(prog.id(), "lightPosition"),
-        1,
-        glm::value_ptr(_lightPosition)
-    );
-
     glUniform1i(glGetUniformLocation(prog.id(), "tex"), 0);
 
-    for (const Object& obj : _objects) {
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, obj.imageCache.texture());
+    glUniform1i(glGetUniformLocation(prog.id(), "flipTex"), _useSpoutTextures ? 1 : 0);
+    
+    glActiveTexture(GL_TEXTURE0);
+    for (Object& obj : _objects) {
+        obj.bindTexture(_useSpoutTextures);
 
         glBindVertexArray(obj.vao);
         glDrawArrays(GL_TRIANGLES, 0, obj.nVertices);
+
+        obj.unbindTexture(_useSpoutTextures);
     }
 
     prog.unbind();
+
+    glDisable(GL_CULL_FACE);
 }
 
-void draw2D(RenderData data) {
+void draw2D(const RenderData& data) {
     if (!_showHelp) {
         return;
     }
 
-    const float w =
-        static_cast<float>(data.window.resolution().x)* data.viewport.size().x;
-
+    float w = static_cast<float>(data.window.resolution().x) * data.viewport.size().x;
     text::Font* f1 = text::FontManager::instance().font("SGCTFont", 14);
 
     if (Engine::instance().isMaster()) {
@@ -228,6 +208,39 @@ void draw2D(RenderData data) {
 
     float h = 25.f;
     for (const Object& obj : _objects) {
+        if (_useSpoutTextures) {
+            text::print(
+                data.window,
+                data.viewport,
+                *f1,
+                text::Alignment::TopLeft,
+                25.f,
+                h,
+                glm::vec4(0.8f, 0.8f, 0.8f, 1.f),
+                "%s: %s",
+                obj.name.c_str(),
+                obj.spoutName.c_str()
+            );
+        }
+        else {
+            text::print(
+                data.window,
+                data.viewport,
+                *f1,
+                text::Alignment::TopLeft,
+                25.f,
+                h,
+                glm::vec4(0.8f, 0.8f, 0.8f, 1.f),
+                "%s: %s (%i)",
+                obj.name.c_str(),
+                obj.imageCache.loadedImage().c_str(),
+                obj.imageCache.texture()
+            );
+        }
+        h += 25.f;
+    }
+
+    if (_useSpoutTextures) {
         text::print(
             data.window,
             data.viewport,
@@ -236,30 +249,26 @@ void draw2D(RenderData data) {
             25.f,
             h,
             glm::vec4(0.8f, 0.8f, 0.8f, 1.f),
-            "%s: %s (%i)",
-            obj.name.c_str(),
-            obj.imageCache.loadedImage().c_str(),
-            obj.imageCache.texture()
+            "Spout"
         );
-        h += 25.f;
     }
-
-    text::print(
-        data.window,
-        data.viewport,
-        *f1,
-        text::Alignment::TopLeft,
-        25.f,
-        h,
-        glm::vec4(0.8f, 0.8f, 0.8f, 1.f),
-        "Current image: %i", _currentImage
-    );
+    else {
+        text::print(
+            data.window,
+            data.viewport,
+            *f1,
+            text::Alignment::TopLeft,
+            25.f,
+            h,
+            glm::vec4(0.8f, 0.8f, 0.8f, 1.f),
+            "Images // Current image: %i", _currentImage
+        );
+    }
 }
 
 void cleanUp() {
-    for (const Object& obj : _objects) {
-        glDeleteVertexArrays(1, &obj.vao);
-        glDeleteBuffers(1, &obj.vbo);
+    for (Object& obj : _objects) {
+        obj.deinitialize();
     }
     _objects.clear();
 }
@@ -297,6 +306,12 @@ void keyboardCallback(Key key, Modifier, Action action, int) {
         case Key::Key1:
             _currentImage = 0;
             _playingImages = false;
+            _useSpoutTextures = false;
+            break;
+        case Key::Key2:
+            _currentImage = 0;
+            _playingImages = false;
+            _useSpoutTextures = true;
             break;
     }
 }
@@ -350,36 +365,35 @@ void mouseButton(MouseButton button, Modifier, Action action) {
     }
 }
 
-void encode() {
-    SyncData data;
-    data.eyePosX = _eyePosition.x;
-    data.eyePosY = _eyePosition.y;
-    data.eyePosZ = _eyePosition.z;
+std::vector<std::byte> encode() {
+    SyncData sync;
+    sync.eyePosX = _eyePosition.x;
+    sync.eyePosY = _eyePosition.y;
+    sync.eyePosZ = _eyePosition.z;
 
-    data.lookAtPhi = _lookAtPhi;
-    data.lookAtTheta = _lookAtTheta;
+    sync.lookAtPhi = _lookAtPhi;
+    sync.lookAtTheta = _lookAtTheta;
 
-    data.lightPosX = _lightPosition.x;
-    data.lightPosY = _lightPosition.y;
-    data.lightPosZ = _lightPosition.z;
+    sync.currentImage = _currentImage;
+    sync.showHelp = _showHelp;
+    sync.useSpoutTextures = _useSpoutTextures;
 
-    data.currentImage = _currentImage;
-    data.showHelp = _showHelp;
-
-    _syncData.setValue(data);
-    SharedData::instance().writeObj(_syncData);
+    std::vector<std::byte> data;
+    serializeObject(data, sync);
+    return data;
 }
 
-void decode() {
-    SharedData::instance().readObj(_syncData);
-    const SyncData& data = _syncData.value();
+void decode(const std::vector<std::byte>& data) {
+    SyncData sync;
+    unsigned int pos = 0;
+    deserializeObject(data, pos, sync);
 
-    _eyePosition = glm::vec3(data.eyePosX, data.eyePosY, data.eyePosZ);
-    _lookAtPhi = data.lookAtPhi;
-    _lookAtTheta = data.lookAtTheta;
-    _lightPosition = glm::vec3(data.lightPosX, data.lightPosY, data.lightPosZ);
-    _currentImage = data.currentImage;
-    _showHelp = data.showHelp;
+    _eyePosition = glm::vec3(sync.eyePosX, sync.eyePosY, sync.eyePosZ);
+    _lookAtPhi = sync.lookAtPhi;
+    _lookAtTheta = sync.lookAtTheta;
+    _currentImage = sync.currentImage;
+    _showHelp = sync.showHelp;
+    _useSpoutTextures = sync.useSpoutTextures;
 }
 
 int main(int argc, char** argv) {
@@ -400,12 +414,22 @@ int main(int argc, char** argv) {
 
     std::map<std::string, std::string> models = ini["Models"];
     std::map<std::string, std::string> imagePaths = ini["Image"];
+    std::map<std::string, std::string> spoutNames = ini["Spout"];
 
     for (const std::pair<const std::string, std::string>& p : models) {
-        const std::string& modelPath = p.second;
-        const std::string& imagePath = imagePaths[p.first];
+        std::string modelPath = p.second;
+        std::string imagePath =
+            imagePaths.find(p.first) != imagePaths.end() ? imagePaths[p.first] : "";
+        std::string spoutName =
+            spoutNames.find(p.first) != spoutNames.end() ? spoutNames[p.first] : "";
 
-        _objects.emplace_back(p.first, modelPath, imagePath);
+        Object obj(
+            p.first,
+            std::move(modelPath),
+            std::move(spoutName),
+            std::move(imagePath)
+        );
+        _objects.push_back(std::move(obj));
     }
 
     std::map<std::string, std::string> camera = ini["Camera"];

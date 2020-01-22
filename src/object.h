@@ -33,24 +33,40 @@
 
 #include "imagecache.h"
 #include <sgct/ogl_headers.h>
+#include <SpoutLibrary.h>
 #include <filesystem>
 #include <string>
 
 struct Object {
-    Object(std::string name, const std::string& objFile,
-        std::filesystem::path imageFolder);
+    Object(std::string name, std::string objFile, std::string spoutName,
+        std::string imageFolder);
     
-    void upload();
+    void initialize();
+    void deinitialize();
+    void bindTexture(bool useSpout);
+    void unbindTexture(bool useSpout);
 
     GLuint vao = 0;
     GLuint vbo = 0;
     uint32_t nVertices = 0;
 
     const std::string name;
-    const std::filesystem::path objFile;
+    const std::string objFile;
+    const std::string spoutName;
     const std::vector<std::filesystem::path> imagePaths;
 
     ImageCache imageCache;
+
+#ifdef SGCT_HAS_SPOUT
+    struct Spout {
+        SPOUTHANDLE receiver = nullptr;
+        std::vector<char> senderName;
+        unsigned int width = 0;
+        unsigned int height = 0;
+        bool isInitialized = false;
+    };
+    Spout spout;
+#endif // SGCT_HAS_SPOUT
 };
 
 #endif // __OBJECT_H__
