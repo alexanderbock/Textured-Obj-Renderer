@@ -33,7 +33,9 @@
 
 #include "imagecache.h"
 #include <sgct/ogl_headers.h>
+#ifdef SGCT_HAS_SPOUT
 #include <SpoutLibrary.h>
+#endif // SGCT_HAS_SPOUT
 #include <filesystem>
 #include <string>
 

@@ -383,9 +383,8 @@ std::vector<std::byte> encode() {
     return data;
 }
 
-void decode(const std::vector<std::byte>& data) {
+void decode(const std::vector<std::byte>& data, unsigned int pos) {
     SyncData sync;
-    unsigned int pos = 0;
     deserializeObject(data, pos, sync);
 
     _eyePosition = glm::vec3(sync.eyePosX, sync.eyePosY, sync.eyePosZ);

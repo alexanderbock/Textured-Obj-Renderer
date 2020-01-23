@@ -166,11 +166,13 @@ void Object::initialize() {
     vbo = std::get<1>(r);
     nVertices = std::get<2>(r);
 
+#ifdef SGCT_HAS_SPOUT
     spout.senderName.resize(spoutName.size() + 1);
     std::fill(spout.senderName.begin(), spout.senderName.end(), '\0');
     std::copy(spoutName.begin(), spoutName.end(), spout.senderName.begin());
 
     spout.receiver = GetSpout();
+#endif // SGCT_HAS_SPOUT
 }
 
 void Object::deinitialize() {
