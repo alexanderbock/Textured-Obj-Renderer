@@ -266,14 +266,14 @@ void draw2D(const RenderData& data) {
     }
 }
 
-void cleanUp() {
+void cleanup() {
     for (Object& obj : _objects) {
         obj.deinitialize();
     }
     _objects.clear();
 }
 
-void keyboardCallback(Key key, Modifier, Action action, int) {
+void keyboard(Key key, Modifier, Action action, int) {
     if (action == Action::Release) {
         return;
     }
@@ -444,15 +444,15 @@ int main(int argc, char** argv) {
     Engine::Callbacks callbacks;
     callbacks.initOpenGL = initGL;
     callbacks.preSync = preSync;
+    callbacks.encode = encode;
+    callbacks.decode = decode;
     callbacks.postSyncPreDraw = postSyncPreDraw;
     callbacks.draw = draw;
     callbacks.draw2D = draw2D;
-    callbacks.cleanUp = cleanUp;
-    callbacks.keyboard = keyboardCallback;
+    callbacks.cleanup = cleanup;
+    callbacks.keyboard = keyboard;
     callbacks.mousePos = mousePos;
     callbacks.mouseButton = mouseButton;
-    callbacks.encode = encode;
-    callbacks.decode = decode;
 
     try {
         Engine::create(cluster, callbacks, config);
