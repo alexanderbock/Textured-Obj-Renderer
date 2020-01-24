@@ -34,7 +34,9 @@
 #include <sgct/log.h>
 
 namespace {
-    std::tuple<GLuint, GLuint, uint32_t> loadObj(const std::string& filename) {
+    std::tuple<GLuint, GLuint, uint32_t> loadObj(const std::string& filename,
+                                                 bool printCornerVertices)
+    {
         obj::Model obj = obj::loadObjFile(filename);
 
         struct Vertex {
@@ -83,6 +85,77 @@ namespace {
                 vertices.push_back(makeVertex(face.i0));
                 vertices.push_back(makeVertex(face.i2));
                 vertices.push_back(makeVertex(*face.i3));
+            }
+        }
+
+        if (printCornerVertices) {
+            bool foundv00 = false;
+            Vertex v00 = {
+                0.f, 0.f, 0.f,
+                0.f, 0.f, 0.f,
+                std::numeric_limits<float>::max(),
+                std::numeric_limits<float>::max()
+            };
+            bool foundv01 = false;
+            Vertex v01 = {
+                0.f, 0.f, 0.f,
+                0.f, 0.f, 0.f,
+                std::numeric_limits<float>::max(),
+                -std::numeric_limits<float>::max()
+            };
+            bool foundv10 = false;
+            Vertex v10 = {
+                0.f, 0.f, 0.f,
+                0.f, 0.f, 0.f,
+                -std::numeric_limits<float>::max(),
+                std::numeric_limits<float>::max()
+            };
+            bool foundv11 = false;
+            Vertex v11 = {
+                0.f, 0.f, 0.f,
+                0.f, 0.f, 0.f,
+                -std::numeric_limits<float>::max(),
+                -std::numeric_limits<float>::max()
+            };
+
+            for (const Vertex& vertex : vertices) {
+                if (vertex.u < v00.u && vertex.v < v00.v) {
+                    v00 = vertex;
+                    foundv00 = true;
+                }
+                if (vertex.u < v01.u && vertex.v > v01.v) {
+                    v01 = vertex;
+                    foundv01 = true;
+                }
+                if (vertex.u > v10.u && vertex.v < v10.v) {
+                    v10 = vertex;
+                    foundv10 = true;
+                }
+                if (vertex.u > v11.u && vertex.v > v11.v) {
+                    v11 = vertex;
+                    foundv11 = true;
+                }
+            }
+            if (foundv00 && foundv01 && foundv10 && foundv11) {
+                sgct::Log::Info("Vertex locations for %s", filename.c_str());
+                sgct::Log::Info(
+                    "LL (u=%f, v=%f): %f %f %f", v00.u, v00.v, v00.x, v00.y, v00.z
+                );
+                sgct::Log::Info(
+                    "UL (u=%f, v=%f): %f %f %f", v01.u, v01.v, v01.x, v01.y, v01.z
+                );
+                sgct::Log::Info(
+                    "LR (u=%f, v=%f): %f %f %f", v10.u, v10.v, v10.x, v10.y, v10.z
+                );
+                sgct::Log::Info(
+                    "UR (u=%f, v=%f): %f %f %f", v11.u, v11.v, v11.x, v11.y, v11.z
+                );
+            }
+            else {
+                sgct::Log::Error(
+                    "Error finding corner vertices %i %i %i %i",
+                    foundv00, foundv01, foundv10, foundv11
+                );
             }
         }
 
@@ -159,9 +232,9 @@ Object::Object(std::string name_, std::string objFile_, std::string spoutName_,
     , imageCache(imagePaths)
 {}
 
-void Object::initialize() {
+void Object::initialize(bool printCornerVertices) {
     sgct::Log::Info("Loading obj file %s", objFile.c_str());
-    std::tuple<GLuint, GLuint, uint32_t> r = loadObj(objFile);
+    std::tuple<GLuint, GLuint, uint32_t> r = loadObj(objFile, printCornerVertices);
     vao = std::get<0>(r);
     vbo = std::get<1>(r);
     nVertices = std::get<2>(r);

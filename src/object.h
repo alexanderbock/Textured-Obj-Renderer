@@ -43,7 +43,7 @@ struct Object {
     Object(std::string name, std::string objFile, std::string spoutName,
         std::string imageFolder);
     
-    void initialize();
+    void initialize(bool printCornerVertices);
     void deinitialize();
     void bindTexture(bool useSpout);
     void unbindTexture(bool useSpout);

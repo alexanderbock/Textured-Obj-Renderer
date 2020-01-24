@@ -45,7 +45,7 @@ using namespace sgct;
 namespace {
     constexpr const float Sensitivity = 750.f;
 
-    constexpr const char* vertexShader = R"(
+    constexpr const char* VertexShader = R"(
 #version 330 core
 
 layout (location = 0) in vec3 in_position;
@@ -67,7 +67,7 @@ void main() {
 }
 )";
 
-    constexpr const char* fragmentShader = R"(
+    constexpr const char* FragmentShader = R"(
 #version 330 core
 
 in vec3 tr_position;
@@ -88,68 +88,58 @@ void main() {
 }
 )";
 
-    std::vector<Object> _objects;
+    // Synchronized values
+    glm::vec3 eyePosition = glm::vec3(0.f, 0.f, 0.f);
+    double lookAtPhi = 0.0;
+    double lookAtTheta = 0.0;
 
-    bool _leftButtonDown = false;
-    bool _rightButtonDown = false;
-    bool _playingImages = false;
+    bool useSpoutTextures = false;
+    uint32_t currentImage = 0;
+    bool showHelp = false;
 
-    bool _useSpoutTextures = false;
-    uint32_t _currentImage = 0;
-    bool _showHelp = false;
+    // State value
+    std::vector<Object> objects;
 
-    glm::vec3 _eyePosition = glm::vec3(0.f, 0.f, 0.f);
-    double _lookAtPhi = 0.0;
-    double _lookAtTheta = 0.0;
-
-    struct SyncData {
-        float eyePosX;
-        float eyePosY;
-        float eyePosZ;
-
-        double lookAtPhi;
-        double lookAtTheta;
-
-        uint32_t currentImage;
-        bool showHelp;
-        bool useSpoutTextures;
-    };
+    bool leftButtonDown = false;
+    bool rightButtonDown = false;
+    bool playingImages = false;
+    bool printCornerVertices = false;
 
 } // namespace
 
 void initGL(GLFWwindow*) {
-    for (Object& obj : _objects) {
-        obj.initialize();
+    for (Object& obj : objects) {
+        obj.initialize(printCornerVertices);
         obj.imageCache.setCurrentImage(0);
     }
     Log::Info("Finished loading");
 
-    ShaderManager::instance().addShaderProgram("wall", vertexShader, fragmentShader);
+    ShaderManager::instance().addShaderProgram("wall", VertexShader, FragmentShader);
 }
 
 void preSync() {
-    if (_playingImages) {
-        _currentImage += 1;
+    if (playingImages) {
+        currentImage += 1;
     }
 }
 
 void postSyncPreDraw() {
-    for (Object& obj : _objects) {
-        obj.imageCache.setCurrentImage(_currentImage);
+    for (Object& obj : objects) {
+        obj.imageCache.setCurrentImage(currentImage);
     }
 }
 
 void draw(const RenderData& data) {
     glEnable(GL_CULL_FACE);
 
-    glm::mat4 translation = glm::translate(glm::mat4(1.f), _eyePosition);
+    glm::mat4 translation = glm::translate(glm::mat4(1.f), eyePosition);
 
     glm::quat phiRotation = glm::angleAxis(
-        static_cast<float>(_lookAtPhi),
+        static_cast<float>(lookAtPhi),
         glm::vec3(0.f, 1.f, 0.f)
     );
     glm::quat thetaRotation = glm::angleAxis(
-        static_cast<float>(_lookAtTheta),
+        static_cast<float>(lookAtTheta),
         glm::vec3(1.f, 0.f, 0.f)
     );
     glm::quat view = thetaRotation * phiRotation;
@@ -167,16 +157,16 @@ void draw(const RenderData& data) {
 
     glUniform1i(glGetUniformLocation(prog.id(), "tex"), 0);
 
-    glUniform1i(glGetUniformLocation(prog.id(), "flipTex"), _useSpoutTextures ? 1 : 0);
+    glUniform1i(glGetUniformLocation(prog.id(), "flipTex"), useSpoutTextures ? 1 : 0);
     
     glActiveTexture(GL_TEXTURE0);
-    for (Object& obj : _objects) {
-        obj.bindTexture(_useSpoutTextures);
+    for (Object& obj : objects) {
+        obj.bindTexture(useSpoutTextures);
 
         glBindVertexArray(obj.vao);
         glDrawArrays(GL_TRIANGLES, 0, obj.nVertices);
 
-        obj.unbindTexture(_useSpoutTextures);
+        obj.unbindTexture(useSpoutTextures);
     }
 
     prog.unbind();
@@ -185,7 +175,7 @@ void draw(const RenderData& data) {
 }
 
 void draw2D(const RenderData& data) {
-    if (!_showHelp) {
+    if (!showHelp) {
         return;
     }
 
@@ -207,8 +197,9 @@ void draw2D(const RenderData& data) {
     }
 
     float h = 25.f;
-    for (const Object& obj : _objects) {
-        if (_useSpoutTextures) {
+    for (const Object& obj : objects) {
+        if (useSpoutTextures) {
+#ifdef SGCT_HAS_SPOUT
             text::print(
                 data.window,
                 data.viewport,
@@ -221,6 +212,19 @@ void draw2D(const RenderData& data) {
                 obj.name.c_str(),
                 obj.spoutName.c_str()
             );
+#else // SGCT_HAS_SPOUT
+            text::print(
+                data.window,
+                data.viewport,
+                *f1,
+                text::Alignment::TopLeft,
+                25.f,
+                h,
+                glm::vec4(0.8f, 0.2f, 0.2f, 1.f),
+                "Compiled with Spout support"
+            );
+            break;
+#endif // SGCT_HAS_SPOUT
         }
         else {
             text::print(
@@ -240,7 +244,7 @@ void draw2D(const RenderData& data) {
         h += 25.f;
     }
 
-    if (_useSpoutTextures) {
+    if (useSpoutTextures) {
         text::print(
             data.window,
             data.viewport,
@@ -261,16 +265,16 @@ void draw2D(const RenderData& data) {
             25.f,
             h,
             glm::vec4(0.8f, 0.8f, 0.8f, 1.f),
-            "Images // Current image: %i", _currentImage
+            "Images // Current image: %i", currentImage
         );
     }
 }
 
 void cleanup() {
-    for (Object& obj : _objects) {
+    for (Object& obj : objects) {
         obj.deinitialize();
     }
-    _objects.clear();
+    objects.clear();
 }
 
 void keyboard(Key key, Modifier, Action action, int) {
@@ -280,38 +284,38 @@ void keyboard(Key key, Modifier, Action action, int) {
 
     switch (key) {
         case Key::W:
-            _eyePosition += glm::vec3(0.1f, 0.f, 0.f);
+            eyePosition += glm::vec3(0.1f, 0.f, 0.f);
             break;
         case Key::S:
-            _eyePosition -= glm::vec3(0.1f, 0.f, 0.f);
+            eyePosition -= glm::vec3(0.1f, 0.f, 0.f);
             break;
         case Key::A:
-            _eyePosition += glm::vec3(0.f, 0.f, 0.1f);
+            eyePosition += glm::vec3(0.f, 0.f, 0.1f);
             break;
         case Key::D:
-            _eyePosition -= glm::vec3(0.f, 0.f, 0.1f);
+            eyePosition -= glm::vec3(0.f, 0.f, 0.1f);
             break;
         case Key::Space:
-            _playingImages = !_playingImages;
+            playingImages = !playingImages;
             break;
         case Key::Up:
-            _currentImage += 1;
+            currentImage += 1;
             break;
         case Key::Down:
-            _currentImage = std::max(_currentImage - 1, 0u);
+            currentImage = std::max(currentImage - 1, 0u);
             break;
         case Key::F1:
-            _showHelp = !_showHelp;
+            showHelp = !showHelp;
             break;
         case Key::Key1:
-            _currentImage = 0;
-            _playingImages = false;
-            _useSpoutTextures = false;
+            currentImage = 0;
+            playingImages = false;
+            useSpoutTextures = false;
             break;
         case Key::Key2:
-            _currentImage = 0;
-            _playingImages = false;
-            _useSpoutTextures = true;
+            currentImage = 0;
+            playingImages = false;
+            useSpoutTextures = true;
             break;
     }
 }
@@ -324,75 +328,73 @@ void mousePos(double x, double y) {
     const double dx = (x - width / 2) / Sensitivity;
     const double dy = (y - height / 2) / Sensitivity;
 
-    if (_leftButtonDown) {
-        _lookAtPhi += dx;
-        _lookAtTheta = std::clamp(
-            _lookAtTheta + dy,
+    if (leftButtonDown) {
+        lookAtPhi += dx;
+        lookAtTheta = std::clamp(
+            lookAtTheta + dy,
             -glm::half_pi<double>(),
             glm::half_pi<double>()
         );
     }
 
-    if (_rightButtonDown) {
-        _eyePosition.y += static_cast<float>(dy);
+    if (rightButtonDown) {
+        eyePosition.y += static_cast<float>(dy);
     }
 
-    if (_leftButtonDown || _rightButtonDown) {
+    if (leftButtonDown || rightButtonDown) {
         glfwSetCursorPos(w, width / 2, height / 2);
     }
 }
 
 void mouseButton(MouseButton button, Modifier, Action action) {
     if (button == MouseButton::Button1) {
-        _leftButtonDown = action == Action::Press;
+        leftButtonDown = action == Action::Press;
     }
 
     if (button == MouseButton::Button2) {
-        _rightButtonDown = action == Action::Press;
+        rightButtonDown = action == Action::Press;
     }
 
     GLFWwindow* w = glfwGetCurrentContext();
     glfwSetInputMode(
         w,
         GLFW_CURSOR,
-        (_leftButtonDown || _rightButtonDown) ? GLFW_CURSOR_HIDDEN : GLFW_CURSOR_NORMAL
+        (leftButtonDown || rightButtonDown) ? GLFW_CURSOR_HIDDEN : GLFW_CURSOR_NORMAL
     );
     int width, height;
     glfwGetWindowSize(w, &width, &height);
 
-    if (_leftButtonDown || _rightButtonDown) {
+    if (leftButtonDown || rightButtonDown) {
         glfwSetCursorPos(w, width / 2, height / 2);
     }
 }
 
 std::vector<std::byte> encode() {
-    SyncData sync;
-    sync.eyePosX = _eyePosition.x;
-    sync.eyePosY = _eyePosition.y;
-    sync.eyePosZ = _eyePosition.z;
-
-    sync.lookAtPhi = _lookAtPhi;
-    sync.lookAtTheta = _lookAtTheta;
-
-    sync.currentImage = _currentImage;
-    sync.showHelp = _showHelp;
-    sync.useSpoutTextures = _useSpoutTextures;
-
     std::vector<std::byte> data;
-    serializeObject(data, sync);
+    serializeObject(data, eyePosition.x);
+    serializeObject(data, eyePosition.y);
+    serializeObject(data, eyePosition.z);
+
+    serializeObject(data, lookAtPhi);
+    serializeObject(data, lookAtTheta);
+
+    serializeObject(data, currentImage);
+    serializeObject(data, showHelp);
+    serializeObject(data, useSpoutTextures);
     return data;
 }
 
 void decode(const std::vector<std::byte>& data, unsigned int pos) {
-    SyncData sync;
-    deserializeObject(data, pos, sync);
+    deserializeObject(data, pos, eyePosition.x);
+    deserializeObject(data, pos, eyePosition.y);
+    deserializeObject(data, pos, eyePosition.z);
 
-    _eyePosition = glm::vec3(sync.eyePosX, sync.eyePosY, sync.eyePosZ);
-    _lookAtPhi = sync.lookAtPhi;
-    _lookAtTheta = sync.lookAtTheta;
-    _currentImage = sync.currentImage;
-    _showHelp = sync.showHelp;
-    _useSpoutTextures = sync.useSpoutTextures;
+    deserializeObject(data, pos, lookAtPhi);
+    deserializeObject(data, pos, lookAtTheta);
+
+    deserializeObject(data, pos, currentImage);
+    deserializeObject(data, pos, showHelp);
+    deserializeObject(data, pos, useSpoutTextures);
 }
 
 int main(int argc, char** argv) {
@@ -414,6 +416,14 @@ int main(int argc, char** argv) {
     std::map<std::string, std::string> models = ini["Models"];
     std::map<std::string, std::string> imagePaths = ini["Image"];
     std::map<std::string, std::string> spoutNames = ini["Spout"];
+    
+    std::map<std::string, std::string> misc = ini["Misc"];
+    std::string height = misc["CameraHeight"];
+    std::from_chars(height.data(), height.data() + height.size(), eyePosition.y);
+    eyePosition.y = -eyePosition.y;
+
+    const std::string outputCornersStr = misc["OutputCornerVertices"];
+    printCornerVertices = outputCornersStr == "true";
 
     for (const std::pair<const std::string, std::string>& p : models) {
         std::string modelPath = p.second;
@@ -428,13 +438,9 @@ int main(int argc, char** argv) {
             std::move(spoutName),
             std::move(imagePath)
         );
-        _objects.push_back(std::move(obj));
+        objects.push_back(std::move(obj));
     }
 
-    std::map<std::string, std::string> camera = ini["Camera"];
-    std::string height = camera["Height"];
-    std::from_chars(height.data(), height.data() + height.size(), _eyePosition.y);
-    _eyePosition.y = -_eyePosition.y;
 
 
     std::vector<std::string> arg(argv + 1, argv + argc);
