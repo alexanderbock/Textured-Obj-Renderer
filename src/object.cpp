@@ -32,25 +32,78 @@
 
 #include "objloader.h"
 #include <sgct/log.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
 
 namespace {
+    struct Vertex {
+        float x = 0.f;
+        float y = 0.f;
+        float z = 0.f;
+
+        float nx = 0.f;
+        float ny = 0.f;
+        float nz = 1.f;
+
+        float u = 0.f;
+        float v = 0.f;
+    };
+
+    std::tuple<GLuint, GLuint, uint32_t> createObjects(const std::vector<Vertex>& verts) {
+        GLuint vao;
+        GLuint vbo;
+        uint32_t nVertices = static_cast<uint32_t>(verts.size());
+
+        glGenVertexArrays(1, &vao);
+        glBindVertexArray(vao);
+
+        glGenBuffers(1, &vbo);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(
+            GL_ARRAY_BUFFER,
+            sizeof(Vertex) * verts.size(),
+            verts.data(),
+            GL_STATIC_DRAW
+        );
+
+
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(
+            0,
+            3,
+            GL_FLOAT,
+            GL_FALSE,
+            sizeof(Vertex),
+            nullptr
+        );
+
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(
+            1,
+            3,
+            GL_FLOAT,
+            GL_FALSE,
+            sizeof(Vertex),
+            reinterpret_cast<void*>(3 * sizeof(float))
+        );
+
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(
+            2,
+            2,
+            GL_FLOAT,
+            GL_FALSE,
+            sizeof(Vertex),
+            reinterpret_cast<void*>(6 * sizeof(float))
+        );
+
+        return { vao, vbo, nVertices };
+    }
+
     std::tuple<GLuint, GLuint, uint32_t> loadObj(const std::string& filename,
                                                  bool printCornerVertices)
     {
         obj::Model obj = obj::loadObjFile(filename);
-
-        struct Vertex {
-            float x = 0.f;
-            float y = 0.f;
-            float z = 0.f;
-
-            float nx = 0.f;
-            float ny = 0.f;
-            float nz = 1.f;
-
-            float u = 0.f;
-            float v = 0.f;
-        };
 
         std::vector<Vertex> vertices;
 
@@ -159,54 +212,82 @@ namespace {
             }
         }
 
-        GLuint vao;
-        GLuint vbo;
-        uint32_t nVertices = static_cast<uint32_t>(vertices.size());
+        return createObjects(vertices);
+    }
 
-        glGenVertexArrays(1, &vao);
-        glBindVertexArray(vao);
+    std::tuple<GLuint, GLuint, uint32_t> createCylinderGeometry(float r, float h) {
+        constexpr const int Sections = 128;
 
-        glGenBuffers(1, &vbo);
-        glBindBuffer(GL_ARRAY_BUFFER, vbo);
-        glBufferData(
-            GL_ARRAY_BUFFER,
-            sizeof(Vertex) * vertices.size(),
-            vertices.data(),
-            GL_STATIC_DRAW
-        );
+        float sectorStep = glm::two_pi<float>() / (Sections - 1);
+
+        std::vector<Vertex> vertices;
+        for (int i = 0; i < Sections - 1; ++i) {
+            float angle0 = i * sectorStep;
+            float angle1 = (i + 1) * sectorStep;
+
+            const float x0 = cos(angle0) * r;
+            const float y0 = 0.f;
+            const float z0 = sin(angle0) * r;
+
+            const float x1 = cos(angle1) * r;
+            const float y1 = h;
+            const float z1 = sin(angle1) * r;
 
 
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(
-            0,
-            3,
-            GL_FLOAT,
-            GL_FALSE,
-            sizeof(Vertex),
-            nullptr
-        );
+            // Lower left
+            Vertex ll;
+            ll.x = x0;
+            ll.y = y0;
+            ll.z = z0;
+            ll.nx = -x0;
+            ll.ny = -y0;
+            ll.nz = -z0;
+            ll.u = static_cast<float>(i) / static_cast<float>(Sections - 1);
+            ll.v = 0.f;
 
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(
-            1,
-            3,
-            GL_FLOAT,
-            GL_FALSE,
-            sizeof(Vertex),
-            reinterpret_cast<void*>(3 * sizeof(float))
-        );
+            // Upper right
+            Vertex ur;
+            ur.x = x1;
+            ur.y = y1;
+            ur.z = z1;
+            ur.nx = -x1;
+            ur.ny = -y1;
+            ur.nz = -z1;
+            ur.u = static_cast<float>(i + 1) / static_cast<float>(Sections - 1);
+            ur.v = 1.f;
 
-        glEnableVertexAttribArray(2);
-        glVertexAttribPointer(
-            2,
-            2,
-            GL_FLOAT,
-            GL_FALSE,
-            sizeof(Vertex),
-            reinterpret_cast<void*>(6 * sizeof(float))
-        );
+            // Upper left
+            Vertex ul;
+            ul.x = x0;
+            ul.y = y1;
+            ul.z = z0;
+            ul.nx = -x0;
+            ul.ny = -y1;
+            ul.nz = -z0;
+            ul.u = static_cast<float>(i) / static_cast<float>(Sections - 1);
+            ul.v = 1.f;
 
-        return { vao, vbo, nVertices };
+            // Lower right
+            Vertex lr;
+            lr.x = x1;
+            lr.y = y0;
+            lr.z = z1;
+            lr.nx = -x1;
+            lr.ny = -y0;
+            lr.nz = -z1;
+            lr.u = static_cast<float>(i + 1) / static_cast<float>(Sections - 1);
+            lr.v = 0.f;
+
+            vertices.push_back(ll);
+            vertices.push_back(ur);
+            vertices.push_back(ul);
+
+            vertices.push_back(ll);
+            vertices.push_back(lr);
+            vertices.push_back(ur);
+        }
+
+        return createObjects(vertices);
     }
 
     std::vector<std::filesystem::path> loadImagePaths(std::string imageFolder) {
@@ -218,6 +299,7 @@ namespace {
         for (const fs::directory_entry& entry : fs::directory_iterator(imageFolder)) {
             res.push_back(entry);
         }
+        std::sort(res.begin(), res.end());
         return res;
     }
 } // namespace
@@ -232,9 +314,25 @@ Object::Object(std::string name_, std::string objFile_, std::string spoutName_,
     , imageCache(imagePaths)
 {}
 
-void Object::initialize(bool printCornerVertices) {
+void Object::initializeFromModel(bool printCornerVertices) {
     sgct::Log::Info("Loading obj file %s", objFile.c_str());
     std::tuple<GLuint, GLuint, uint32_t> r = loadObj(objFile, printCornerVertices);
+    vao = std::get<0>(r);
+    vbo = std::get<1>(r);
+    nVertices = std::get<2>(r);
+
+#ifdef SGCT_HAS_SPOUT
+    spout.senderName.resize(spoutName.size() + 1);
+    std::fill(spout.senderName.begin(), spout.senderName.end(), '\0');
+    std::copy(spoutName.begin(), spoutName.end(), spout.senderName.begin());
+
+    spout.receiver = GetSpout();
+#endif // SGCT_HAS_SPOUT
+}
+
+void Object::initializeFromCylinder(float radius, float height) {
+    sgct::Log::Info("Loading cylinder");
+    std::tuple<GLuint, GLuint, uint32_t> r = createCylinderGeometry(radius, height);
     vao = std::get<0>(r);
     vbo = std::get<1>(r);
     nVertices = std::get<2>(r);

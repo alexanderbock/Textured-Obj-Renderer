@@ -40,14 +40,18 @@
 #include <string>
 
 struct Object {
+    enum class Type { Unspecified, Model, Cylinder };
+
     Object(std::string name, std::string objFile, std::string spoutName,
         std::string imageFolder);
     
-    void initialize(bool printCornerVertices);
+    void initializeFromModel(bool printCornerVertices);
+    void initializeFromCylinder(float radius, float height);
     void deinitialize();
     void bindTexture(bool useSpout);
     void unbindTexture(bool useSpout);
 
+    Type type = Type::Unspecified;
     GLuint vao = 0;
     GLuint vbo = 0;
     uint32_t nVertices = 0;

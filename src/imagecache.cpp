@@ -40,7 +40,6 @@ ImageCache::ImageCache(std::vector<std::filesystem::path> paths)
 }
 
 void ImageCache::setCurrentImage(uint32_t currentImage) {
-    const bool cacheDirty = currentImage != _currentImage;
     if (currentImage == _currentImage) {
         return;
     }

@@ -31,9 +31,11 @@
 #include "objloader.h"
 
 #include <sgct/log.h>
+#include <glm/glm.hpp>
 #include <charconv>
 #include <fstream>
 #include <functional>
+#include <sstream>
 
 namespace {
     constexpr const char* IgnoredTokens[] = {
@@ -74,108 +76,113 @@ namespace {
         return Token::Unknown;
     }
 
+    glm::vec2 readVec2(const std::string& x, const std::string& y) {
+        glm::vec3 r;
+#ifdef WIN32
+        std::from_chars_result xRes = std::from_chars(x.data(), x.data() + x.size(), r.x);
+        std::from_chars_result yRes = std::from_chars(y.data(), y.data() + y.size(), r.y);
 
-    obj::Position readPosition(std::string_view line) {
-        const size_t firstSeparator = line.find(' ');
-        const size_t secondSeparator = line.find(' ', firstSeparator + 1);
-        std::string_view xStr = line.substr(0, firstSeparator);
-        std::string_view yStr = line.substr(
-            firstSeparator + 1,
-            secondSeparator - firstSeparator - 1
-        );
-        std::string_view zStr = line.substr(secondSeparator + 1);
+        if (xRes.ec != std::errc() || yRes.ec != std::errc()) {
+            throw std::runtime_error("Error loading line");
+        }
+#else // WIN32
+        std::istringstream xStream(x);
+        xStream >> r.x;
 
-        obj::Position res;
+        std::istringstream yStream(y);
+        yStream >> r.y;
 
-        std::from_chars_result xRes = std::from_chars(
-            xStr.data(), xStr.data() + xStr.size(),
-            res.x
-        );
+        if (xStream.fail() || yStream.fail()) {
+            throw std::runtime_error("Error loading line");
+        }
+#endif // WIN32
 
-        std::from_chars_result yRes = std::from_chars(
-            yStr.data(), yStr.data() + yStr.size(),
-            res.y
-        );
+        return r;
+    }
 
-        std::from_chars_result zRes = std::from_chars(
-            zStr.data(), zStr.data() + zStr.size(),
-            res.z
-        );
+    glm::vec3 readVec3(const std::string& x, const std::string& y, const std::string& z) {
+        glm::vec3 r;
+#ifdef WIN32
+        std::from_chars_result xRes = std::from_chars(x.data(), x.data() + x.size(), r.x);
+        std::from_chars_result yRes = std::from_chars(y.data(), y.data() + y.size(), r.y);
+        std::from_chars_result zRes = std::from_chars(z.data(), z.data() + z.size(), r.z);
 
         if (xRes.ec != std::errc() || yRes.ec != std::errc() ||
             zRes.ec != std::errc())
         {
-            throw std::runtime_error("Error loading line: " + std::string(line));
+            throw std::runtime_error("Error loading line");
         }
+#else // WIN32
+        std::istringstream xStream(x);
+        xStream >> r.x;
 
+        std::istringstream yStream(y);
+        yStream >> r.y;
+
+        std::istringstream zStream(z);
+        zStream >> r.z;
+
+        if (xStream.fail() || yStream.fail() || zStream.fail()) {
+            throw std::runtime_error("Error loading line");
+        }
+#endif // WIN32
+
+        return r;
+    }
+
+
+    obj::Position readPosition(std::string_view line) {
+        const size_t firstSeparator = line.find(' ');
+        const size_t secondSeparator = line.find(' ', firstSeparator + 1);
+
+        std::string xStr = std::string(line.substr(0, firstSeparator));
+        std::string yStr = std::string(
+            line.substr(firstSeparator + 1, secondSeparator - firstSeparator - 1)
+        );
+        std::string zStr = std::string(line.substr(secondSeparator + 1));
+
+        obj::Position res;
+        glm::vec3 r = readVec3(xStr, yStr, zStr);
+        res.x = r.x;
+        res.y = r.y;
+        res.z = r.z;
         return res;
     }
 
     obj::Normal readNormal(std::string_view line) {
         const size_t firstSeparator = line.find(' ');
         const size_t secondSeparator = line.find(' ', firstSeparator + 1);
-        std::string_view xStr = line.substr(0, firstSeparator);
-        std::string_view yStr = line.substr(
-            firstSeparator + 1,
-            secondSeparator - firstSeparator - 1
+
+        std::string xStr = std::string(line.substr(0, firstSeparator));
+        std::string yStr = std::string(
+            line.substr(firstSeparator + 1, secondSeparator - firstSeparator - 1)
         );
-        std::string_view zStr = line.substr(secondSeparator + 1);
+        std::string zStr = std::string(line.substr(secondSeparator + 1));
 
         obj::Normal res;
-
-        std::from_chars_result xRes = std::from_chars(
-            xStr.data(), xStr.data() + xStr.size(),
-            res.nx
-        );
-
-        std::from_chars_result yRes = std::from_chars(
-            yStr.data(), yStr.data() + yStr.size(),
-            res.ny
-        );
-
-        std::from_chars_result zRes = std::from_chars(
-            zStr.data(), zStr.data() + zStr.size(),
-            res.nz
-        );
-
-        if (xRes.ec != std::errc() || yRes.ec != std::errc() ||
-            zRes.ec != std::errc())
-        {
-            throw std::runtime_error("Error loading line: " + std::string(line));
-        }
-
+        glm::vec3 r = readVec3(xStr, yStr, zStr);
+        res.nx = r.x;
+        res.ny = r.y;
+        res.nz = r.z;
         return res;
     }
 
     obj::UV readUV(std::string_view line) {
         const size_t separator = line.find(' ');
 
-        std::string_view uStr = line.substr(0, separator);
-        std::string_view vStr = line.substr(separator + 1);
+        std::string uStr = std::string(line.substr(0, separator));
+        std::string vStr = std::string(line.substr(separator + 1));
 
         obj::UV res;
-
-        std::from_chars_result uRes = std::from_chars(
-            uStr.data(), uStr.data() + uStr.size(),
-            res.u
-        );
-
-        std::from_chars_result vRes = std::from_chars(
-            vStr.data(), vStr.data() + vStr.size(),
-            res.v
-        );
-
-        if (uRes.ec != std::errc() || vRes.ec != std::errc()) {
-            throw std::runtime_error("Error loading line: " + std::string(line));
-        }
-        
+        glm::vec2 r = readVec2(uStr, vStr);
+        res.u = r.x;
+        res.v = r.y;
         return res;
     }
 
     obj::Face readFace(std::string_view line) {
         const size_t firstSep = line.find(' ');
         const size_t secondSep = line.find(' ', firstSep + 1);
-        const bool hasThird = secondSep != std::string_view::npos;
         const size_t thirdSep = line.find(' ', secondSep + 1);
         const bool hasFourth = thirdSep != std::string_view::npos;
 
@@ -194,9 +201,7 @@ namespace {
         auto readIndices = [](std::string_view v) -> obj::Face::Indices {
             // Eats the first element from the number and modifies the argument to contain
             // the rest
-            std::function<uint32_t(std::string_view & v, bool& done)> eat =
-                [&eat](std::string_view& v, bool& done)
-            {
+            auto eat = [](std::string_view& v, bool& done) {
                 const size_t sep = v.find('/');
 
                 std::string_view str = v.substr(0, sep);
@@ -293,6 +298,9 @@ Model loadObjFile(const std::string& file) {
                 break;
             case Token::Face:
                 model.faces.push_back(readFace(remainder));
+                break;
+            case Token::Ignored:
+            case Token::Unknown:
                 break;
         }
     }

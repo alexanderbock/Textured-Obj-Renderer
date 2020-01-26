@@ -37,13 +37,18 @@
 #include <glfw/glfw3.h>
 #include <charconv>
 #include <filesystem>
+#include <sstream>
 #include <string>
 #include <vector>
 
 using namespace sgct;
 
 namespace {
-    constexpr const float Sensitivity = 750.f;
+#ifdef WIN32
+    constexpr const float Sensitivity = 1.f / 750.f;
+#else // WIN32
+    constexpr const float Sensitivity = 1.f / 25.f;
+#endif // WIN32
 
     constexpr const char* VertexShader = R"(
 #version 330 core
@@ -96,6 +101,7 @@ void main() {
     bool useSpoutTextures = false;
     uint32_t currentImage = 0;
     bool showHelp = false;
+    bool showStatistics = false;
 
     // State value
     std::vector<Object> objects;
@@ -104,12 +110,21 @@ void main() {
     bool rightButtonDown = false;
     bool playingImages = false;
     bool printCornerVertices = false;
+    bool renderModels = false;
+    bool renderCylinder = false;
+    float cylinderHeight = 0.f;
+    float cylinderRadius = 0.f;
 
 } // namespace
 
 void initGL(GLFWwindow*) {
     for (Object& obj : objects) {
-        obj.initialize(printCornerVertices);
+        if (obj.type == Object::Type::Model) {
+            obj.initializeFromModel(printCornerVertices);
+        }
+        if (obj.type == Object::Type::Cylinder) {
+            obj.initializeFromCylinder(cylinderRadius, cylinderHeight);
+        }
         obj.imageCache.setCurrentImage(0);
     }
     Log::Info("Finished loading");
@@ -127,6 +142,7 @@ void postSyncPreDraw() {
     for (Object& obj : objects) {
         obj.imageCache.setCurrentImage(currentImage);
     }
+    Engine::instance().setStatsGraphVisibility(showStatistics);
 }
 
 void draw(const RenderData& data) {
@@ -307,6 +323,9 @@ void keyboard(Key key, Modifier, Action action, int) {
         case Key::F1:
             showHelp = !showHelp;
             break;
+        case Key::I:
+            showStatistics = !showStatistics;
+            break;
         case Key::Key1:
             currentImage = 0;
             playingImages = false;
@@ -325,10 +344,12 @@ void mousePos(double x, double y) {
     GLFWwindow* w = glfwGetCurrentContext();
     glfwGetWindowSize(w, &width, &height);
 
-    const double dx = (x - width / 2) / Sensitivity;
-    const double dy = (y - height / 2) / Sensitivity;
+    const double dx = (x - width / 2) * Sensitivity;
+    const double dy = (y - height / 2) * Sensitivity;
+
 
     if (leftButtonDown) {
+        Log::Info("(%f, %f)", dx, dy);
         lookAtPhi += dx;
         lookAtTheta = std::clamp(
             lookAtTheta + dy,
@@ -380,6 +401,7 @@ std::vector<std::byte> encode() {
 
     serializeObject(data, currentImage);
     serializeObject(data, showHelp);
+    serializeObject(data, showStatistics);
     serializeObject(data, useSpoutTextures);
     return data;
 }
@@ -394,17 +416,19 @@ void decode(const std::vector<std::byte>& data, unsigned int pos) {
 
     deserializeObject(data, pos, currentImage);
     deserializeObject(data, pos, showHelp);
+    deserializeObject(data, pos, showStatistics);
     deserializeObject(data, pos, useSpoutTextures);
 }
 
 int main(int argc, char** argv) {
     std::filesystem::path iniPath = "config.ini";
     while (!std::filesystem::exists(iniPath) && iniPath != iniPath.root_path() ) {
-        iniPath = std::filesystem::absolute(".." / iniPath);
+        iniPath = ".." / iniPath;
     }
     if (iniPath == iniPath.root_path()) {
         throw std::runtime_error("Could not find 'config.ini'");
     }
+    iniPath = std::filesystem::absolute(iniPath);
     
     if (!iniPath.parent_path().empty()) {
         std::filesystem::current_path(iniPath.parent_path());
@@ -413,31 +437,80 @@ int main(int argc, char** argv) {
     Log::Info("Loading ini file %s", iniPath.string().c_str());
     Ini ini = readIni(iniPath.string());
 
-    std::map<std::string, std::string> models = ini["Models"];
-    std::map<std::string, std::string> imagePaths = ini["Image"];
-    std::map<std::string, std::string> spoutNames = ini["Spout"];
-    
     std::map<std::string, std::string> misc = ini["Misc"];
     std::string height = misc["CameraHeight"];
+#ifdef WIN32
     std::from_chars(height.data(), height.data() + height.size(), eyePosition.y);
+#else // WIN32
+    std::istringstream str(height);
+    str >> eyePosition.y;
+#endif // WIN32
     eyePosition.y = -eyePosition.y;
 
     const std::string outputCornersStr = misc["OutputCornerVertices"];
     printCornerVertices = outputCornersStr == "true";
+    const std::string renderModelsStr = misc["RenderModels"];
+    renderModels = renderModelsStr == "true";
+    const std::string renderCylinderStr = misc["RenderCylinder"];
+    renderCylinder = renderCylinderStr == "true";
 
-    for (const std::pair<const std::string, std::string>& p : models) {
-        std::string modelPath = p.second;
-        std::string imagePath =
-            imagePaths.find(p.first) != imagePaths.end() ? imagePaths[p.first] : "";
-        std::string spoutName =
-            spoutNames.find(p.first) != spoutNames.end() ? spoutNames[p.first] : "";
+    std::map<std::string, std::string> models = ini["Models"];
 
-        Object obj(
-            p.first,
-            std::move(modelPath),
-            std::move(spoutName),
-            std::move(imagePath)
-        );
+    std::map<std::string, std::string> cylinder = ini["Cylinder"];
+    const std::string cylinderHeightStr = cylinder["Height"];
+    const std::string cylinderRadiusStr = cylinder["Radius"];
+#ifdef WIN32
+    std::from_chars(
+        cylinderHeightStr.data(),
+        cylinderHeightStr.data() + cylinderHeightStr.size(),
+        cylinderHeight
+    );
+
+    std::from_chars(
+        cylinderRadiusStr.data(),
+        cylinderRadiusStr.data() + cylinderRadiusStr.size(),
+        cylinderRadius
+    );
+#else // WIN32
+    str.clear();
+    str.str(cylinderHeightStr);
+    str >> cylinderHeight;
+    str.clear();
+    str.str(cylinderRadiusStr);
+    str >> cylinderRadius;
+#endif // WIN32
+
+    std::map<std::string, std::string> imagePaths = ini["Image"];
+    std::map<std::string, std::string> spoutNames = ini["Spout"];
+
+    if (renderModels) {
+        for (const std::pair<const std::string, std::string>& p : models) {
+            std::string modelPath = p.second;
+            std::string imagePath =
+                imagePaths.find(p.first) != imagePaths.end() ? imagePaths[p.first] : "";
+            std::string spoutName =
+                spoutNames.find(p.first) != spoutNames.end() ? spoutNames[p.first] : "";
+
+            Object obj(
+                p.first,
+                std::move(modelPath),
+                std::move(spoutName),
+                std::move(imagePath)
+            );
+            obj.type = Object::Type::Model;
+            objects.push_back(std::move(obj));
+        }
+    }
+    if (renderCylinder) {
+        std::string imagePath = imagePaths.find("Cylinder") != imagePaths.end() ?
+            imagePaths["Cylinder"] :
+            "";
+        std::string spoutName = spoutNames.find("Cylinder") != spoutNames.end() ?
+            spoutNames["Cylinder"] :
+            "";
+
+        Object obj("Cylinder", "", std::move(spoutName), std::move(imagePath));
+        obj.type = Object::Type::Cylinder;
         objects.push_back(std::move(obj));
     }
 
