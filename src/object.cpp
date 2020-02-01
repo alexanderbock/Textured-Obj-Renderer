@@ -297,6 +297,10 @@ namespace {
         namespace fs = std::filesystem;
         std::vector<fs::path> res;
         for (const fs::directory_entry& entry : fs::directory_iterator(imageFolder)) {
+            std::filesystem::path p = entry;
+            if (p.filename() == ".DS_Store") {
+                continue;
+            }
             res.push_back(entry);
         }
         std::sort(res.begin(), res.end());

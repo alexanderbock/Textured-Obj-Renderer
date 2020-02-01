@@ -336,6 +336,11 @@ void keyboard(Key key, Modifier, Action action, int) {
             playingImages = false;
             useSpoutTextures = true;
             break;
+        case Key::Enter:
+            eyePosition = glm::vec3(0.f);
+            lookAtPhi = 0.0;
+            lookAtTheta = 0.0;
+            break;
     }
 }
 
@@ -349,7 +354,6 @@ void mousePos(double x, double y) {
 
 
     if (leftButtonDown) {
-        Log::Info("(%f, %f)", dx, dy);
         lookAtPhi += dx;
         lookAtTheta = std::clamp(
             lookAtTheta + dy,

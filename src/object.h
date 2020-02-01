@@ -32,7 +32,7 @@
 #define __OBJECT_H__
 
 #include "imagecache.h"
-#include <sgct/ogl_headers.h>
+#include <sgct/opengl.h>
 #ifdef SGCT_HAS_SPOUT
 #include <SpoutLibrary.h>
 #endif // SGCT_HAS_SPOUT

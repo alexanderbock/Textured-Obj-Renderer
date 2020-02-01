@@ -31,7 +31,7 @@
 #ifndef __IMAGECACHE_H__
 #define __IMAGECACHE_H__
 
-#include <sgct/ogl_headers.h>
+#include <sgct/opengl.h>
 #include <array>
 #include <filesystem>
 #include <vector>
